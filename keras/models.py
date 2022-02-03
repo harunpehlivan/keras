@@ -198,14 +198,9 @@ def _clone_functional_model(model, input_tensors=None, layer_fn=_clone_layer):
                                          created_layers=created_layers))
   metrics_names = model.metrics_names
   model = Model(input_tensors, output_tensors, name=model.name)
-  # Layers not directly tied to outputs of the Model, such as loss layers
-  # created in `add_loss` and `add_metric`.
-  ancillary_layers = [
+  if ancillary_layers := [
       layer for layer in created_layers.values() if layer not in model.layers
-  ]
-  # TODO(b/162887610): This may need to adjust the inbound node index if the
-  # created layers had already been used to define other models.
-  if ancillary_layers:
+  ]:
     new_nodes = tf.nest.flatten([
         layer.inbound_nodes[1:]
         if functional._should_skip_first_node(layer)
@@ -487,7 +482,7 @@ def _in_place_subclassed_model_reset(model):
   attributes_cache = {}
   for name in dir(model):
     # Skip attrs that track other trackables.
-    if name == 'submodules' or name == '_self_tracked_trackables':
+    if name in ['submodules', '_self_tracked_trackables']:
       continue
 
     try:
@@ -534,25 +529,24 @@ def _in_place_subclassed_model_reset(model):
     model._self_tracked_trackables.append(fresh_layer)
 
   # Cache original model build attributes (in addition to layers)
-  if (not hasattr(model, '_original_attributes_cache') or
-      model._original_attributes_cache is None):
-    if model.built:
-      attributes_to_cache = [
-          'inputs',
-          'outputs',
-          'total_loss',
-          'optimizer',
-          'train_function',
-          'test_function',
-          'predict_function',
-          '_training_endpoints',
-          '_collected_trainable_weights',
-          '_feed_inputs',
-          '_feed_input_names',
-          '_feed_input_shapes',
-      ]
-      for name in attributes_to_cache:
-        attributes_cache[name] = getattr(model, name)
+  if ((not hasattr(model, '_original_attributes_cache')
+       or model._original_attributes_cache is None)) and model.built:
+    attributes_to_cache = [
+        'inputs',
+        'outputs',
+        'total_loss',
+        'optimizer',
+        'train_function',
+        'test_function',
+        'predict_function',
+        '_training_endpoints',
+        '_collected_trainable_weights',
+        '_feed_inputs',
+        '_feed_input_names',
+        '_feed_input_shapes',
+    ]
+    for name in attributes_to_cache:
+      attributes_cache[name] = getattr(model, name)
   model._original_attributes_cache = attributes_cache
   _reset_build_compile_trackers(model)
   model._setattr_tracking = setattr_tracking

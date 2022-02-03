@@ -115,13 +115,10 @@ def ResNet(stack_fn,
     A `keras.Model` instance.
   """
   global layers
-  if 'layers' in kwargs:
-    layers = kwargs.pop('layers')
-  else:
-    layers = VersionAwareLayers()
+  layers = kwargs.pop('layers') if 'layers' in kwargs else VersionAwareLayers()
   if kwargs:
     raise ValueError('Unknown argument(s): %s' % (kwargs,))
-  if not (weights in {'imagenet', None} or tf.io.gfile.exists(weights)):
+  if weights not in {'imagenet', None} and not tf.io.gfile.exists(weights):
     raise ValueError('The `weights` argument should be either '
                      '`None` (random initialization), `imagenet` '
                      '(pre-training on ImageNet), '
@@ -142,11 +139,10 @@ def ResNet(stack_fn,
 
   if input_tensor is None:
     img_input = layers.Input(shape=input_shape)
+  elif not backend.is_keras_tensor(input_tensor):
+    img_input = layers.Input(tensor=input_tensor, shape=input_shape)
   else:
-    if not backend.is_keras_tensor(input_tensor):
-      img_input = layers.Input(tensor=input_tensor, shape=input_shape)
-    else:
-      img_input = input_tensor
+    img_input = input_tensor
 
   bn_axis = 3 if backend.image_data_format() == 'channels_last' else 1
 
@@ -174,11 +170,10 @@ def ResNet(stack_fn,
     imagenet_utils.validate_activation(classifier_activation, weights)
     x = layers.Dense(classes, activation=classifier_activation,
                      name='predictions')(x)
-  else:
-    if pooling == 'avg':
-      x = layers.GlobalAveragePooling2D(name='avg_pool')(x)
-    elif pooling == 'max':
-      x = layers.GlobalMaxPooling2D(name='max_pool')(x)
+  elif pooling == 'avg':
+    x = layers.GlobalAveragePooling2D(name='avg_pool')(x)
+  elif pooling == 'max':
+    x = layers.GlobalMaxPooling2D(name='max_pool')(x)
 
   # Ensure that the model takes into account
   # any potential predecessors of `input_tensor`.

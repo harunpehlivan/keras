@@ -670,10 +670,7 @@ def ZBlock(filters_in,
     x = layers.BatchNormalization(
         momentum=0.9, epsilon=1e-5, name=name + "_conv_1x1_2_bn")(x)
 
-    if stride != 1:
-      return x
-    else:
-      return x + inputs
+    return x if stride != 1 else x + inputs
 
   return apply
 
@@ -818,7 +815,7 @@ def RegNet(depths,
       ValueError: if `block_type` is not one of `{"X", "Y", "Z"}`
 
   """
-  if not (weights in {"imagenet", None} or tf.io.gfile.exists(weights)):
+  if weights not in {"imagenet", None} and not tf.io.gfile.exists(weights):
     raise ValueError("The `weights` argument should be either "
                      "`None` (random initialization), `imagenet` "
                      "(pre-training on ImageNet), "
@@ -839,11 +836,10 @@ def RegNet(depths,
 
   if input_tensor is None:
     img_input = layers.Input(shape=input_shape)
+  elif not backend.is_keras_tensor(input_tensor):
+    img_input = layers.Input(tensor=input_tensor, shape=input_shape)
   else:
-    if not backend.is_keras_tensor(input_tensor):
-      img_input = layers.Input(tensor=input_tensor, shape=input_shape)
-    else:
-      img_input = input_tensor
+    img_input = input_tensor
 
   if input_tensor is not None:
     inputs = layer_utils.get_source_inputs(input_tensor)
@@ -874,11 +870,10 @@ def RegNet(depths,
     x = Head(num_classes=classes)(x)
     imagenet_utils.validate_activation(classifier_activation, weights)
 
-  else:
-    if pooling == "avg":
-      x = layers.GlobalAveragePooling2D()(x)
-    elif pooling == "max":
-      x = layers.GlobalMaxPooling2D()(x)
+  elif pooling == "avg":
+    x = layers.GlobalAveragePooling2D()(x)
+  elif pooling == "max":
+    x = layers.GlobalMaxPooling2D()(x)
 
   model = training.Model(inputs=inputs, outputs=x, name=model_name)
 

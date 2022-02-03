@@ -200,7 +200,6 @@ class KerasLayerCallOverheadBenchmarks(  # pylint: disable=undefined-variable
     self._run(fn, iters)
 
 
-if __name__ == "__main__":
-  if tf.compat.v1.executing_eagerly():
-    # Only run test when eager is enabled (skip test in v1).
-    tf.test.main()
+if __name__ == "__main__" and tf.compat.v1.executing_eagerly():
+  # Only run test when eager is enabled (skip test in v1).
+  tf.test.main()

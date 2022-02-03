@@ -340,7 +340,7 @@ class KerasCallbacksTest(keras_parameterized.TestCase):
 
       def on_epoch_end(self, epoch, log=None):
         logging.info(f'counter: {model._train_counter}')
-        if epoch == 5 or epoch == 12:
+        if epoch in [5, 12]:
           raise RuntimeError('Interruption')
 
     log_dir = self.get_temp_dir()
@@ -1358,8 +1358,8 @@ class KerasCallbacksTest(keras_parameterized.TestCase):
           ('auto', 'loss'),
           ('unknown', 'unknown')
       ]
+      patience = 0
       for mode, monitor in cases:
-        patience = 0
         cbks = [
             keras.callbacks.EarlyStopping(
                 patience=patience, monitor=monitor, mode=mode)
@@ -2436,10 +2436,11 @@ class TestTensorBoardV2(keras_parameterized.TestCase):
         epochs=2,
         callbacks=[tb_cbk])
 
-    events_file_run_basenames = set()
-    for (dirpath, _, filenames) in os.walk(self.train_dir):
-      if any(fn.startswith('events.out.') for fn in filenames):
-        events_file_run_basenames.add(os.path.basename(dirpath))
+    events_file_run_basenames = {
+        os.path.basename(dirpath)
+        for (dirpath, _, filenames) in os.walk(self.train_dir) if any(
+            fn.startswith('events.out.') for fn in filenames)
+    }
     self.assertEqual(events_file_run_basenames, {'train'})
 
   def test_TensorBoard_batch_metrics(self):
@@ -3086,10 +3087,12 @@ class MostRecentlyModifiedFileMatchingPatternTest(tf.test.TestCase):
         f.write('foo bar')
     # Ensure the files have been actually written.
     self.assertEqual(
-        set([
+        {
             os.path.join(test_dir, file_name)
             for file_name in os.listdir(test_dir)
-        ]), set(file_paths))
+        },
+        set(file_paths),
+    )
     self.assertEqual(
         keras.callbacks.ModelCheckpoint(None)
         ._get_most_recently_modified_file_matching_pattern(path_pattern),

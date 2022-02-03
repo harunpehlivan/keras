@@ -663,10 +663,7 @@ def MBConvBlock(
     if 0 < se_ratio <= 1:
       filters_se = max(1, int(input_filters * se_ratio))
       se = layers.GlobalAveragePooling2D(name=name + "se_squeeze")(x)
-      if bn_axis == 1:
-        se_shape = (filters, 1, 1)
-      else:
-        se_shape = (1, 1, filters)
+      se_shape = (filters, 1, 1) if bn_axis == 1 else (1, 1, filters)
       se = layers.Reshape(se_shape, name=name + "se_reshape")(se)
 
       se = layers.Conv2D(
@@ -757,11 +754,7 @@ def FusedMBConvBlock(
     if 0 < se_ratio <= 1:
       filters_se = max(1, int(input_filters * se_ratio))
       se = layers.GlobalAveragePooling2D(name=name + "se_squeeze")(x)
-      if bn_axis == 1:
-        se_shape = (filters, 1, 1)
-      else:
-        se_shape = (1, 1, filters)
-
+      se_shape = (filters, 1, 1) if bn_axis == 1 else (1, 1, filters)
       se = layers.Reshape(se_shape, name=name + "se_reshape")(se)
 
       se = layers.Conv2D(
@@ -884,7 +877,7 @@ def EfficientNetV2(
   if blocks_args == "default":
     blocks_args = DEFAULT_BLOCKS_ARGS[model_name]
 
-  if not (weights in {"imagenet", None} or tf.io.gfile.exists(weights)):
+  if weights not in {"imagenet", None} and not tf.io.gfile.exists(weights):
     raise ValueError("The `weights` argument should be either "
                      "`None` (random initialization), `imagenet` "
                      "(pre-training on ImageNet), "
@@ -907,11 +900,10 @@ def EfficientNetV2(
 
   if input_tensor is None:
     img_input = layers.Input(shape=input_shape)
+  elif not backend.is_keras_tensor(input_tensor):
+    img_input = layers.Input(tensor=input_tensor, shape=input_shape)
   else:
-    if not backend.is_keras_tensor(input_tensor):
-      img_input = layers.Input(tensor=input_tensor, shape=input_shape)
-    else:
-      img_input = input_tensor
+    img_input = input_tensor
 
   bn_axis = 3 if backend.image_data_format() == "channels_last" else 1
 
@@ -1026,11 +1018,10 @@ def EfficientNetV2(
         kernel_initializer=DENSE_KERNEL_INITIALIZER,
         bias_initializer=tf.constant_initializer(0),
         name="predictions")(x)
-  else:
-    if pooling == "avg":
-      x = layers.GlobalAveragePooling2D(name="avg_pool")(x)
-    elif pooling == "max":
-      x = layers.GlobalMaxPooling2D(name="max_pool")(x)
+  elif pooling == "avg":
+    x = layers.GlobalAveragePooling2D(name="avg_pool")(x)
+  elif pooling == "max":
+    x = layers.GlobalMaxPooling2D(name="max_pool")(x)
 
   # Ensure that the model takes into account
   # any potential predecessors of `input_tensor`.

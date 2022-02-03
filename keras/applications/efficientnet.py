@@ -484,10 +484,7 @@ def block(inputs,
   if 0 < se_ratio <= 1:
     filters_se = max(1, int(filters_in * se_ratio))
     se = layers.GlobalAveragePooling2D(name=name + 'se_squeeze')(x)
-    if bn_axis == 1:
-      se_shape = (filters, 1, 1)
-    else:
-      se_shape = (1, 1, filters)
+    se_shape = (filters, 1, 1) if bn_axis == 1 else (1, 1, filters)
     se = layers.Reshape(se_shape, name=name + 'se_reshape')(se)
     se = layers.Conv2D(
         filters_se,

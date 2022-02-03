@@ -406,19 +406,15 @@ def _internal_set_learning_phase(graph, value):
 
 def _internal_get_learning_phase(graph):
   phase = _GRAPH_LEARNING_PHASES.get(graph, None)
-  if isinstance(phase, weakref.ref):
-    return phase()
-  else:
-    return phase
+  return phase() if isinstance(phase, weakref.ref) else phase
 
 
 def _default_learning_phase():
   if context.executing_eagerly():
     return 0
-  else:
-    with name_scope(''):
-      return tf.compat.v1.placeholder_with_default(
-          False, shape=(), name='keras_learning_phase')
+  with name_scope(''):
+    return tf.compat.v1.placeholder_with_default(
+        False, shape=(), name='keras_learning_phase')
 
 
 @keras_export('keras.backend.set_learning_phase')
@@ -714,24 +710,22 @@ def _get_session(op_input_list=()):
   global _SESSION
   default_session = tf.compat.v1.get_default_session()
   if default_session is not None:
-    session = default_session
-  else:
-    if tf.inside_function():
-      raise RuntimeError('Cannot get session inside Tensorflow graph function.')
-    # If we don't have a session, or that session does not match the current
-    # graph, create and cache a new session.
-    if (getattr(_SESSION, 'session', None) is None or
-        _SESSION.session.graph is not _current_graph(op_input_list)):
-      # If we are creating the Session inside a tf.distribute.Strategy scope,
-      # we ask the strategy for the right session options to use.
-      if tf.distribute.has_strategy():
-        configure_and_create_distributed_session(
-            tf.distribute.get_strategy())
-      else:
-        _SESSION.session = tf.compat.v1.Session(
-            config=get_default_session_config())
-    session = _SESSION.session
-  return session
+    return default_session
+  if tf.inside_function():
+    raise RuntimeError('Cannot get session inside Tensorflow graph function.')
+  # If we don't have a session, or that session does not match the current
+  # graph, create and cache a new session.
+  if (getattr(_SESSION, 'session', None) is None or
+      _SESSION.session.graph is not _current_graph(op_input_list)):
+    # If we are creating the Session inside a tf.distribute.Strategy scope,
+    # we ask the strategy for the right session options to use.
+    if tf.distribute.has_strategy():
+      configure_and_create_distributed_session(
+          tf.distribute.get_strategy())
+    else:
+      _SESSION.session = tf.compat.v1.Session(
+          config=get_default_session_config())
+  return _SESSION.session
 
 
 @keras_export(v1=['keras.backend.get_session'])
@@ -773,13 +767,12 @@ tf.__internal__.tracking.register_session_provider(get_session)
 
 
 def get_graph():
-  if tf.executing_eagerly():
-    global _GRAPH
-    if not getattr(_GRAPH, 'graph', None):
-      _GRAPH.graph = tf.__internal__.FuncGraph('keras_graph')
-    return _GRAPH.graph
-  else:
+  if not tf.executing_eagerly():
     return tf.compat.v1.get_default_graph()
+  global _GRAPH
+  if not getattr(_GRAPH, 'graph', None):
+    _GRAPH.graph = tf.__internal__.FuncGraph('keras_graph')
+  return _GRAPH.graph
 
 
 @tf_contextlib.contextmanager
@@ -1022,10 +1015,7 @@ def to_dense(tensor):
   False
 
   """
-  if is_sparse(tensor):
-    return tf.sparse.to_dense(tensor)
-  else:
-    return tensor
+  return tf.sparse.to_dense(tensor) if is_sparse(tensor) else tensor
 
 
 @keras_export('keras.backend.name_scope', v1=[])
@@ -1170,16 +1160,12 @@ def unique_object_name(name,
   if name_uid_map is None:
     name_uid_map = get_default_graph_uid_map()
   if avoid_names is None:
-    if avoid_observed_names:
-      avoid_names = OBSERVED_NAMES
-    else:
-      avoid_names = set()
+    avoid_names = OBSERVED_NAMES if avoid_observed_names else set()
   proposed_name = None
   while proposed_name is None or proposed_name in avoid_names:
     name_key = (namespace, name)
     if zero_based:
-      number = name_uid_map[name_key]
-      if number:
+      if number := name_uid_map[name_key]:
         proposed_name = name + '_' + str(number)
       else:
         proposed_name = name
@@ -1203,11 +1189,9 @@ def _get_variables(graph=None):
 def _initialize_variables(session):
   """Utility to initialize uninitialized variables on the fly."""
   variables = _get_variables(get_graph())
-  candidate_vars = []
-  for v in variables:
-    if not getattr(v, '_keras_initialized', False):
-      candidate_vars.append(v)
-  if candidate_vars:
+  if candidate_vars := [
+      v for v in variables if not getattr(v, '_keras_initialized', False)
+  ]:
     # This step is expensive, so we only run it on variables not already
     # marked as initialized.
     is_initialized = session.run(
@@ -1409,11 +1393,10 @@ def is_placeholder(x):
     if tf.compat.v1.executing_eagerly_outside_functions():
       return hasattr(x, '_is_backend_placeholder')
     from keras.utils import tf_utils  # pylint: disable=g-import-not-at-top
-    if tf_utils.is_extension_type(x):
-      flat_components = tf.nest.flatten(x, expand_composites=True)
-      return py_any(is_placeholder(c) for c in flat_components)
-    else:
+    if not tf_utils.is_extension_type(x):
       return x.op.type == 'Placeholder'
+    flat_components = tf.nest.flatten(x, expand_composites=True)
+    return py_any(is_placeholder(c) for c in flat_components)
   except AttributeError:
     return False
 
@@ -2144,13 +2127,12 @@ def moving_average_update(x, value, momentum):
   Returns:
       The updated variable.
   """
-  if tf.__internal__.tf2.enabled():
-    momentum = tf.cast(momentum, x.dtype)
-    value = tf.cast(value, x.dtype)
-    return x.assign_sub((x - value) * (1 - momentum))
-  else:
+  if not tf.__internal__.tf2.enabled():
     return tf.__internal__.train.assign_moving_average(
         x, value, momentum, zero_debias=True)
+  momentum = tf.cast(momentum, x.dtype)
+  value = tf.cast(value, x.dtype)
+  return x.assign_sub((x - value) * (1 - momentum))
 
 
 # LINEAR ALGEBRA
@@ -2195,33 +2177,29 @@ def dot(x, y):
   >>> tf.keras.backend.int_shape(xy)
   (2, 4, 5)
   """
-  if ndim(x) is not None and (ndim(x) > 2 or ndim(y) > 2):
-    x_shape = []
-    for i, s in zip(int_shape(x), tf.unstack(tf.shape(x))):
-      if i is not None:
-        x_shape.append(i)
-      else:
-        x_shape.append(s)
-    x_shape = tuple(x_shape)
-    y_shape = []
-    for i, s in zip(int_shape(y), tf.unstack(tf.shape(y))):
-      if i is not None:
-        y_shape.append(i)
-      else:
-        y_shape.append(s)
-    y_shape = tuple(y_shape)
-    y_permute_dim = list(range(ndim(y)))
-    y_permute_dim = [y_permute_dim.pop(-2)] + y_permute_dim
-    xt = tf.reshape(x, [-1, x_shape[-1]])
-    yt = tf.reshape(
-        tf.compat.v1.transpose(y, perm=y_permute_dim), [y_shape[-2], -1])
-    return tf.reshape(
-        tf.matmul(xt, yt), x_shape[:-1] + y_shape[:-2] + y_shape[-1:])
-  if is_sparse(x):
-    out = tf.sparse.sparse_dense_matmul(x, y)
-  else:
-    out = tf.matmul(x, y)
-  return out
+  if ndim(x) is None or ndim(x) <= 2 and ndim(y) <= 2:
+    return tf.sparse.sparse_dense_matmul(x, y) if is_sparse(x) else tf.matmul(x, y)
+  x_shape = []
+  for i, s in zip(int_shape(x), tf.unstack(tf.shape(x))):
+    if i is not None:
+      x_shape.append(i)
+    else:
+      x_shape.append(s)
+  x_shape = tuple(x_shape)
+  y_shape = []
+  for i, s in zip(int_shape(y), tf.unstack(tf.shape(y))):
+    if i is not None:
+      y_shape.append(i)
+    else:
+      y_shape.append(s)
+  y_shape = tuple(y_shape)
+  y_permute_dim = list(range(ndim(y)))
+  y_permute_dim = [y_permute_dim.pop(-2)] + y_permute_dim
+  xt = tf.reshape(x, [-1, x_shape[-1]])
+  yt = tf.reshape(
+      tf.compat.v1.transpose(y, perm=y_permute_dim), [y_shape[-2], -1])
+  return tf.reshape(
+      tf.matmul(xt, yt), x_shape[:-1] + y_shape[:-2] + y_shape[-1:])
 
 
 @keras_export('keras.backend.batch_dot')
@@ -2287,22 +2265,18 @@ def batch_dot(x, y, axes=None):
   x_batch_size = x_shape[0]
   y_batch_size = y_shape[0]
 
-  if x_batch_size is not None and y_batch_size is not None:
-    if x_batch_size != y_batch_size:
-      raise ValueError('Cannot do batch_dot on inputs '
-                       'with different batch sizes. '
-                       'Received inputs with shapes ' +
-                       str(x_shape) + ' and ' +
-                       str(y_shape) + '.')
+  if (x_batch_size is not None and y_batch_size is not None
+      and x_batch_size != y_batch_size):
+    raise ValueError('Cannot do batch_dot on inputs '
+                     'with different batch sizes. '
+                     'Received inputs with shapes ' +
+                     str(x_shape) + ' and ' +
+                     str(y_shape) + '.')
   if isinstance(axes, int):
     axes = [axes, axes]
 
   if axes is None:
-    if y_ndim == 2:
-      axes = [x_ndim - 1, y_ndim - 1]
-    else:
-      axes = [x_ndim - 1, y_ndim - 2]
-
+    axes = [x_ndim - 1, y_ndim - 1] if y_ndim == 2 else [x_ndim - 1, y_ndim - 2]
   if py_any(isinstance(a, (list, tuple)) for a in axes):
     raise ValueError('Multiple target dimensions are not supported. ' +
                      'Expected: None, int, (int, int), ' +
@@ -2898,10 +2872,9 @@ def clip(x, min_value, max_value):
   Returns:
       A tensor.
   """
-  if (isinstance(min_value, (int, float)) and
-      isinstance(max_value, (int, float))):
-    if max_value < min_value:
-      max_value = min_value
+  if (isinstance(min_value, (int, float))
+      and isinstance(max_value, (int, float))) and max_value < min_value:
+    max_value = min_value
   if min_value is None:
     min_value = -np.inf
   if max_value is None:
@@ -3129,15 +3102,8 @@ def _broadcast_normalize_batch_in_training(x,
 
   broadcast_mean = tf.reshape(mean, target_shape)
   broadcast_var = tf.reshape(var, target_shape)
-  if gamma is None:
-    broadcast_gamma = None
-  else:
-    broadcast_gamma = tf.reshape(gamma, target_shape)
-  if beta is None:
-    broadcast_beta = None
-  else:
-    broadcast_beta = tf.reshape(beta, target_shape)
-
+  broadcast_gamma = None if gamma is None else tf.reshape(gamma, target_shape)
+  broadcast_beta = None if beta is None else tf.reshape(beta, target_shape)
   normed = tf.nn.batch_normalization(x, broadcast_mean, broadcast_var,
                                   broadcast_beta, broadcast_gamma, epsilon)
   return normed, mean, var
@@ -3195,19 +3161,17 @@ def normalize_batch_in_training(x, gamma, beta, reduction_axes, epsilon=1e-3):
   Returns:
       A tuple length of 3, `(normalized_tensor, mean, variance)`.
   """
-  if ndim(x) == 4 and list(reduction_axes) in [[0, 1, 2], [0, 2, 3]]:
-    if not _has_nchw_support() and list(reduction_axes) == [0, 2, 3]:
-      return _broadcast_normalize_batch_in_training(
-          x, gamma, beta, reduction_axes, epsilon=epsilon)
-    return _fused_normalize_batch_in_training(
+  if ndim(x) != 4 or list(reduction_axes) not in [[0, 1, 2], [0, 2, 3]]:
+    return (_regular_normalize_batch_in_training(
+        x, gamma, beta,
+        reduction_axes, epsilon=epsilon) if sorted(reduction_axes) == list(
+            range(ndim(x)))[:-1] else _broadcast_normalize_batch_in_training(
+                x, gamma, beta, reduction_axes, epsilon=epsilon))
+  if not _has_nchw_support() and list(reduction_axes) == [0, 2, 3]:
+    return _broadcast_normalize_batch_in_training(
         x, gamma, beta, reduction_axes, epsilon=epsilon)
-  else:
-    if sorted(reduction_axes) == list(range(ndim(x)))[:-1]:
-      return _regular_normalize_batch_in_training(
-          x, gamma, beta, reduction_axes, epsilon=epsilon)
-    else:
-      return _broadcast_normalize_batch_in_training(
-          x, gamma, beta, reduction_axes, epsilon=epsilon)
+  return _fused_normalize_batch_in_training(
+      x, gamma, beta, reduction_axes, epsilon=epsilon)
 
 
 @keras_export('keras.backend.batch_normalization')
@@ -3232,43 +3196,43 @@ def batch_normalization(x, mean, var, beta, gamma, axis=-1, epsilon=1e-3):
   Returns:
       A tensor.
   """
-  if ndim(x) == 4:
+  if ndim(x) != 4:
+    return tf.nn.batch_normalization(x, mean, var, beta, gamma, epsilon)
     # The CPU implementation of `fused_batch_norm` only supports NHWC
-    if axis == 1 or axis == -3:
-      tf_data_format = 'NCHW'
-    elif axis == 3 or axis == -1:
-      tf_data_format = 'NHWC'
-    else:
-      tf_data_format = None
+  if axis in [1, -3]:
+    tf_data_format = 'NCHW'
+  elif axis in [3, -1]:
+    tf_data_format = 'NHWC'
+  else:
+    tf_data_format = None
 
-    if (tf_data_format == 'NHWC' or
-        tf_data_format == 'NCHW' and _has_nchw_support()):
-      # The mean / var / beta / gamma tensors may be broadcasted
-      # so they may have extra axes of size 1, which should be squeezed.
-      if ndim(mean) > 1:
-        mean = tf.reshape(mean, [-1])
-      if ndim(var) > 1:
-        var = tf.reshape(var, [-1])
-      if beta is None:
-        beta = zeros_like(mean)
-      elif ndim(beta) > 1:
-        beta = tf.reshape(beta, [-1])
-      if gamma is None:
-        gamma = ones_like(mean)
-      elif ndim(gamma) > 1:
-        gamma = tf.reshape(gamma, [-1])
-    y, _, _ = tf.compat.v1.nn.fused_batch_norm(
-        x,
-        gamma,
-        beta,
-        epsilon=epsilon,
-        mean=mean,
-        variance=var,
-        data_format=tf_data_format,
-        is_training=False
-    )
-    return y
-  return tf.nn.batch_normalization(x, mean, var, beta, gamma, epsilon)
+  if (tf_data_format == 'NHWC' or
+      tf_data_format == 'NCHW' and _has_nchw_support()):
+    # The mean / var / beta / gamma tensors may be broadcasted
+    # so they may have extra axes of size 1, which should be squeezed.
+    if ndim(mean) > 1:
+      mean = tf.reshape(mean, [-1])
+    if ndim(var) > 1:
+      var = tf.reshape(var, [-1])
+    if beta is None:
+      beta = zeros_like(mean)
+    elif ndim(beta) > 1:
+      beta = tf.reshape(beta, [-1])
+    if gamma is None:
+      gamma = ones_like(mean)
+    elif ndim(gamma) > 1:
+      gamma = tf.reshape(gamma, [-1])
+  y, _, _ = tf.compat.v1.nn.fused_batch_norm(
+      x,
+      gamma,
+      beta,
+      epsilon=epsilon,
+      mean=mean,
+      variance=var,
+      data_format=tf_data_format,
+      is_training=False
+  )
+  return y
 
 
 # SHAPE OPERATIONS
@@ -3299,8 +3263,7 @@ def concatenate(tensors, axis=-1):
 
   """
   if axis < 0:
-    rank = ndim(tensors[0])
-    if rank:
+    if rank := ndim(tensors[0]):
       axis %= rank
     else:
       axis = 0
@@ -3959,10 +3922,7 @@ def batch_get_value(tensors):
     return [x.numpy() for x in tensors]
   elif tf.inside_function():  # pylint: disable=protected-access
     raise RuntimeError('Cannot get value inside Tensorflow graph function.')
-  if tensors:
-    return get_session(tensors).run(tensors)
-  else:
-    return []
+  return get_session(tensors).run(tensors) if tensors else []
 
 
 @keras_export('keras.backend.set_value')
@@ -4867,17 +4827,9 @@ def in_train_phase(x, alt, training=None):
   # TODO(b/138862903): Handle the case when training is tensor.
   if not tf.is_tensor(training):
     if training == 1 or training is True:
-      if callable(x):
-        return x()
-      else:
-        return x
-
+      return x() if callable(x) else x
     elif training == 0 or training is False:
-      if callable(alt):
-        return alt()
-      else:
-        return alt
-
+      return alt() if callable(alt) else alt
   # else: assume learning phase is a placeholder tensor.
   x = switch(training, x, alt)
   return x
@@ -4980,10 +4932,7 @@ def elu(x, alpha=1.):
       A tensor.
   """
   res = tf.nn.elu(x)
-  if alpha == 1:
-    return res
-  else:
-    return tf.where(x > 0, res, alpha * res)
+  return res if alpha == 1 else tf.where(x > 0, res, alpha * res)
 
 
 @keras_export('keras.backend.softmax')
@@ -5694,11 +5643,7 @@ def conv2d_transpose(x,
     raise ValueError('Unknown data_format: ' + str(data_format))
 
   # `atrous_conv2d_transpose` only supports NHWC format, even on GPU.
-  if data_format == 'channels_first' and dilation_rate != (1, 1):
-    force_transpose = True
-  else:
-    force_transpose = False
-
+  force_transpose = data_format == 'channels_first' and dilation_rate != (1, 1)
   x, tf_data_format = _preprocess_conv2d_input(x, data_format, force_transpose)
 
   if data_format == 'channels_first' and tf_data_format == 'NHWC':
@@ -5720,13 +5665,13 @@ def conv2d_transpose(x,
     x = tf.compat.v1.nn.conv2d_transpose(x, kernel, output_shape, strides,
                                          padding=padding,
                                          data_format=tf_data_format)
+  elif dilation_rate[0] != dilation_rate[1]:
+    raise ValueError(
+        'Expected the 2 dimensions of the `dilation_rate` argument '
+        'to be equal to each other. '
+        f'Received: dilation_rate={dilation_rate}'
+    )
   else:
-    if dilation_rate[0] != dilation_rate[1]:
-      raise ValueError(
-          'Expected the 2 dimensions of the `dilation_rate` argument '
-          'to be equal to each other. '
-          f'Received: dilation_rate={dilation_rate}'
-      )
     x = tf.nn.atrous_conv2d_transpose(
         x,
         kernel,
@@ -6318,7 +6263,7 @@ def bias_add(x, bias, data_format=None):
   if data_format not in {'channels_first', 'channels_last'}:
     raise ValueError('Unknown data_format: ' + str(data_format))
   bias_shape = int_shape(bias)
-  if len(bias_shape) != 1 and len(bias_shape) != ndim(x) - 1:
+  if len(bias_shape) not in [1, ndim(x) - 1]:
     raise ValueError(
         'Unexpected bias dimensions %d, expect to be 1 or %d dimensions' %
         (len(bias_shape), ndim(x) - 1))
@@ -6768,19 +6713,17 @@ def configure_and_create_distributed_session(distribution_strategy):
       distribution_strategy.configure(session_config)
       master = distribution_strategy.extended._tpu_cluster_resolver.master()  # pylint: disable=protected-access
       session = tf.compat.v1.Session(config=session_config, target=master)
+    elif worker_context := dc.get_current_worker_context():
+      dc_session_config = worker_context.session_config
+      # Merge the default session config to the one from distribute
+      # coordinator, which is fine for now since they don't have
+      # conflicting configurations.
+      dc_session_config.MergeFrom(session_config)
+      session = tf.compat.v1.Session(
+          config=dc_session_config, target=worker_context.master_target)
     else:
-      worker_context = dc.get_current_worker_context()
-      if worker_context:
-        dc_session_config = worker_context.session_config
-        # Merge the default session config to the one from distribute
-        # coordinator, which is fine for now since they don't have
-        # conflicting configurations.
-        dc_session_config.MergeFrom(session_config)
-        session = tf.compat.v1.Session(
-            config=dc_session_config, target=worker_context.master_target)
-      else:
-        distribution_strategy.configure(session_config)
-        session = tf.compat.v1.Session(config=session_config)
+      distribution_strategy.configure(session_config)
+      session = tf.compat.v1.Session(config=session_config)
 
     set_session(session)
 
@@ -6807,9 +6750,7 @@ def is_tpu_strategy(strategy):
 def cast_variables_to_tensor(tensors):
 
   def _cast_variables_to_tensor(tensor):
-    if isinstance(tensor, tf.Variable):
-      return tf.identity(tensor)
-    return tensor
+    return tf.identity(tensor) if isinstance(tensor, tf.Variable) else tensor
 
   return tf.nest.map_structure(_cast_variables_to_tensor, tensors)
 
@@ -6822,9 +6763,7 @@ def convert_inputs_if_ragged(inputs):
   """Converts any ragged tensors to dense."""
 
   def _convert_ragged_input(inputs):
-    if isinstance(inputs, tf.RaggedTensor):
-      return inputs.to_tensor()
-    return inputs
+    return inputs.to_tensor() if isinstance(inputs, tf.RaggedTensor) else inputs
 
   flat_inputs = tf.nest.flatten(inputs)
   contains_ragged = py_any(
@@ -6847,14 +6786,13 @@ def maybe_convert_to_ragged(is_ragged_input, output, nested_row_lengths,
   if not is_ragged_input:
     return output
 
-  if go_backwards:
-    # Reverse based on the timestep dim, so that nested_row_lengths will mask
-    # from the correct direction. Return the reverse ragged tensor.
-    output = reverse(output, [1])
-    ragged = tf.RaggedTensor.from_tensor(output, nested_row_lengths)
-    return reverse(ragged, [1])
-  else:
+  if not go_backwards:
     return tf.RaggedTensor.from_tensor(output, nested_row_lengths)
+  # Reverse based on the timestep dim, so that nested_row_lengths will mask
+  # from the correct direction. Return the reverse ragged tensor.
+  output = reverse(output, [1])
+  ragged = tf.RaggedTensor.from_tensor(output, nested_row_lengths)
+  return reverse(ragged, [1])
 
 
 class ContextValueCache(weakref.WeakKeyDictionary):

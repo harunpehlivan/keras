@@ -239,9 +239,7 @@ class KerasLossesTest(tf.test.TestCase, parameterized.TestCase):
     # get autographed when in a tf.function
     def loss_fn(y_true, y_pred):
       mse_loss_fn = losses.get('mse')
-      if tf.reduce_mean(y_true) > 0:
-        return mse_loss_fn(y_true, y_pred)
-      else:
+      if tf.reduce_mean(y_true) > 0 or tf.reduce_mean(y_true) <= 0:
         return mse_loss_fn(y_true, y_pred)
 
     mse_obj = losses.LossFunctionWrapper(loss_fn)

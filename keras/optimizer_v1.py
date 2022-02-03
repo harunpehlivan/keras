@@ -197,11 +197,7 @@ class SGD(Optimizer):
       v = self.momentum * m - lr * g  # velocity
       self.updates.append(tf.compat.v1.assign(m, v))
 
-      if self.nesterov:
-        new_p = p + self.momentum * v - lr * g
-      else:
-        new_p = p + v
-
+      new_p = p + self.momentum * v - lr * g if self.nesterov else p + v
       # Apply constraints.
       if getattr(p, 'constraint', None) is not None:
         new_p = p.constraint(new_p)
@@ -785,8 +781,7 @@ class TFOptimizer(Optimizer, tf.__internal__.tracking.Trackable):
         if callable(var_list):
           var_list = var_list()
 
-    var_list = tf.nest.flatten(var_list)
-    if var_list:
+    if var_list := tf.nest.flatten(var_list):
       grads = tape.gradient(loss, var_list, grad_loss)
       grads_and_vars = list(zip(grads, var_list))
       self.apply_gradients(grads_and_vars)
