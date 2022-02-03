@@ -86,7 +86,7 @@ def write_ckpt_to_h5(path_h5, path_ckpt, keras_model, use_ema=True):
           tf_block=tf_block,
           use_ema=use_ema,
           model_name_tf=model_name_tf)
-    elif any([x in w.name for x in ['stem', 'top', 'predictions', 'probs']]):
+    elif any(x in w.name for x in ['stem', 'top', 'predictions', 'probs']):
       tf_name = keras_name_to_tf_name_stem_top(
           w.name, use_ema=use_ema, model_name_tf=model_name_tf)
     elif 'normalization' in w.name:
@@ -103,7 +103,7 @@ def write_ckpt_to_h5(path_h5, path_ckpt, keras_model, use_ema=True):
         w.assign(w_tf)
         changed_weights += 1
     except ValueError as e:
-      if any([x in w.name for x in ['top', 'predictions', 'probs']]):
+      if any(x in w.name for x in ['top', 'predictions', 'probs']):
         warnings.warn(
             'Fail to load top layer variable {}'
             'from {} because of {}.'.format(w.name, tf_name, e),
@@ -175,11 +175,7 @@ def keras_name_to_tf_name_stem_top(keras_name,
   Raises:
     KeyError: if we cannot parse the keras_name.
   """
-  if use_ema:
-    ema = '/ExponentialMovingAverage'
-  else:
-    ema = ''
-
+  ema = '/ExponentialMovingAverage' if use_ema else ''
   stem_top_dict = {
       'probs/bias:0': '{}/head/dense/bias{}',
       'probs/kernel:0': '{}/head/dense/kernel{}',
@@ -246,20 +242,13 @@ def keras_name_to_tf_name_block(keras_name,
     tf_name.append('depthwise_conv2d')
     tf_name.append('depthwise_kernel')
 
-  # conv layers
-  if is_first_blocks:
     # first blocks only have one conv2d
-    if 'project_conv' in keras_name:
+  if 'project_conv' in keras_name:
+    if is_first_blocks:
       tf_name.append('conv2d')
-      tf_name.append('kernel')
-  else:
-    if 'project_conv' in keras_name:
+    else:
       tf_name.append('conv2d_1')
-      tf_name.append('kernel')
-    elif 'expand_conv' in keras_name:
-      tf_name.append('conv2d')
-      tf_name.append('kernel')
-
+    tf_name.append('kernel')
   # squeeze expansion layers
   if '_se_' in keras_name:
     if 'reduce' in keras_name:
@@ -274,19 +263,13 @@ def keras_name_to_tf_name_block(keras_name,
 
   # batch normalization layers
   if 'bn' in keras_name:
-    if is_first_blocks:
-      if 'project' in keras_name:
-        tf_name.append('tpu_batch_normalization_1')
-      else:
-        tf_name.append('tpu_batch_normalization')
+    if (is_first_blocks and 'project' in keras_name or not is_first_blocks
+        and 'project' not in keras_name and 'expand' not in keras_name):
+      tf_name.append('tpu_batch_normalization_1')
+    elif is_first_blocks or 'project' not in keras_name:
+      tf_name.append('tpu_batch_normalization')
     else:
-      if 'project' in keras_name:
-        tf_name.append('tpu_batch_normalization_2')
-      elif 'expand' in keras_name:
-        tf_name.append('tpu_batch_normalization')
-      else:
-        tf_name.append('tpu_batch_normalization_1')
-
+      tf_name.append('tpu_batch_normalization_2')
     for x in ['moving_mean', 'moving_variance', 'beta', 'gamma']:
       if x in keras_name:
         tf_name.append(x)
@@ -320,18 +303,16 @@ def check_match(keras_block, tf_block, keras_weight_names, tf_weight_names,
           model_name_tf=model_name_tf)
       names_from_keras.add(y)
 
-  names_from_tf = set()
-  for x in tf_weight_names:
-    if tf_block in x and x.split('/')[1].endswith(tf_block):
-      names_from_tf.add(x)
-
-  names_missing = names_from_keras - names_from_tf
-  if names_missing:
+  names_from_tf = {
+      x
+      for x in tf_weight_names
+      if tf_block in x and x.split('/')[1].endswith(tf_block)
+  }
+  if names_missing := names_from_keras - names_from_tf:
     raise ValueError('{} variables not found in checkpoint file: {}'.format(
         len(names_missing), names_missing))
 
-  names_unused = names_from_tf - names_from_keras
-  if names_unused:
+  if names_unused := names_from_tf - names_from_keras:
     warnings.warn(
         '{} variables from checkpoint file are not used: {}'.format(
             len(names_unused), names_unused),

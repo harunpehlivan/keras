@@ -196,7 +196,7 @@ def DenseNet(
   Returns:
     A `keras.Model` instance.
   """
-  if not (weights in {'imagenet', None} or tf.io.gfile.exists(weights)):
+  if weights not in {'imagenet', None} and not tf.io.gfile.exists(weights):
     raise ValueError('The `weights` argument should be either '
                      '`None` (random initialization), `imagenet` '
                      '(pre-training on ImageNet), '
@@ -217,11 +217,10 @@ def DenseNet(
 
   if input_tensor is None:
     img_input = layers.Input(shape=input_shape)
+  elif not backend.is_keras_tensor(input_tensor):
+    img_input = layers.Input(tensor=input_tensor, shape=input_shape)
   else:
-    if not backend.is_keras_tensor(input_tensor):
-      img_input = layers.Input(tensor=input_tensor, shape=input_shape)
-    else:
-      img_input = input_tensor
+    img_input = input_tensor
 
   bn_axis = 3 if backend.image_data_format() == 'channels_last' else 1
 
@@ -251,11 +250,10 @@ def DenseNet(
     imagenet_utils.validate_activation(classifier_activation, weights)
     x = layers.Dense(classes, activation=classifier_activation,
                      name='predictions')(x)
-  else:
-    if pooling == 'avg':
-      x = layers.GlobalAveragePooling2D(name='avg_pool')(x)
-    elif pooling == 'max':
-      x = layers.GlobalMaxPooling2D(name='max_pool')(x)
+  elif pooling == 'avg':
+    x = layers.GlobalAveragePooling2D(name='avg_pool')(x)
+  elif pooling == 'max':
+    x = layers.GlobalMaxPooling2D(name='max_pool')(x)
 
   # Ensure that the model takes into account
   # any potential predecessors of `input_tensor`.
@@ -276,44 +274,31 @@ def DenseNet(
 
   # Load weights.
   if weights == 'imagenet':
-    if include_top:
-      if blocks == [6, 12, 24, 16]:
+    if blocks == [6, 12, 24, 16]:
+      if include_top:
         weights_path = data_utils.get_file(
             'densenet121_weights_tf_dim_ordering_tf_kernels.h5',
             DENSENET121_WEIGHT_PATH,
             cache_subdir='models',
             file_hash='9d60b8095a5708f2dcce2bca79d332c7')
-      elif blocks == [6, 12, 32, 32]:
-        weights_path = data_utils.get_file(
-            'densenet169_weights_tf_dim_ordering_tf_kernels.h5',
-            DENSENET169_WEIGHT_PATH,
-            cache_subdir='models',
-            file_hash='d699b8f76981ab1b30698df4c175e90b')
-      elif blocks == [6, 12, 48, 32]:
-        weights_path = data_utils.get_file(
-            'densenet201_weights_tf_dim_ordering_tf_kernels.h5',
-            DENSENET201_WEIGHT_PATH,
-            cache_subdir='models',
-            file_hash='1ceb130c1ea1b78c3bf6114dbdfd8807')
-    else:
-      if blocks == [6, 12, 24, 16]:
+      else:
         weights_path = data_utils.get_file(
             'densenet121_weights_tf_dim_ordering_tf_kernels_notop.h5',
             DENSENET121_WEIGHT_PATH_NO_TOP,
             cache_subdir='models',
             file_hash='30ee3e1110167f948a6b9946edeeb738')
-      elif blocks == [6, 12, 32, 32]:
-        weights_path = data_utils.get_file(
-            'densenet169_weights_tf_dim_ordering_tf_kernels_notop.h5',
-            DENSENET169_WEIGHT_PATH_NO_TOP,
-            cache_subdir='models',
-            file_hash='b8c4d4c20dd625c148057b9ff1c1176b')
-      elif blocks == [6, 12, 48, 32]:
-        weights_path = data_utils.get_file(
-            'densenet201_weights_tf_dim_ordering_tf_kernels_notop.h5',
-            DENSENET201_WEIGHT_PATH_NO_TOP,
-            cache_subdir='models',
-            file_hash='c13680b51ded0fb44dff2d8f86ac8bb1')
+    elif blocks == [6, 12, 32, 32]:
+      weights_path = data_utils.get_file(
+          'densenet169_weights_tf_dim_ordering_tf_kernels.h5',
+          DENSENET169_WEIGHT_PATH,
+          cache_subdir='models',
+          file_hash='d699b8f76981ab1b30698df4c175e90b')
+    elif blocks == [6, 12, 48, 32]:
+      weights_path = data_utils.get_file(
+          'densenet201_weights_tf_dim_ordering_tf_kernels.h5',
+          DENSENET201_WEIGHT_PATH,
+          cache_subdir='models',
+          file_hash='1ceb130c1ea1b78c3bf6114dbdfd8807')
     model.load_weights(weights_path)
   elif weights is not None:
     model.load_weights(weights)

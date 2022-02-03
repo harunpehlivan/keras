@@ -553,9 +553,7 @@ class _SubclassModelCustomBuild(models.Model):
     self._layer_generating_func = layer_generating_func
 
   def build(self, input_shape):
-    model_layers = []
-    for layer in self._layer_generating_func():
-      model_layers.append(layer)
+    model_layers = list(self._layer_generating_func())
     self.all_layers = model_layers
 
   def call(self, inputs, **kwargs):

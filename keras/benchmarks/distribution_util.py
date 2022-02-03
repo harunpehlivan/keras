@@ -142,8 +142,7 @@ def configure_cluster(worker_hosts=None, task_index=-1):
   Returns:
     Number of workers in the cluster.
   """
-  tf_config = json.loads(os.environ.get("TF_CONFIG", "{}"))
-  if tf_config:
+  if tf_config := json.loads(os.environ.get("TF_CONFIG", "{}")):
     num_workers = (
         len(tf_config["cluster"].get("chief", [])) +
         len(tf_config["cluster"].get("worker", [])))
@@ -168,12 +167,7 @@ def configure_cluster(worker_hosts=None, task_index=-1):
 
 
 def get_strategy_scope(strategy):
-  if strategy:
-    strategy_scope = strategy.scope()
-  else:
-    strategy_scope = DummyContextManager()
-
-  return strategy_scope
+  return strategy.scope() if strategy else DummyContextManager()
 
 
 class DummyContextManager:

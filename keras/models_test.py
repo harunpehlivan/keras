@@ -325,10 +325,7 @@ class TestModelCloning(keras_parameterized.TestCase):
     class LayerWithTensorKwarg(keras.layers.Layer):
 
       def call(self, inputs, tensor=None):
-        if tensor is not None:
-          return inputs * tf.cast(tensor, tf.float32)
-        else:
-          return inputs
+        return inputs * tf.cast(tensor, tf.float32) if tensor is not None else inputs
 
     inputs = keras.layers.Input(shape=(3))
     t = tf.sequence_mask(tf.shape(inputs)[1])

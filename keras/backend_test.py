@@ -384,18 +384,13 @@ class BackendLinearAlgebraTest(tf.test.TestCase, parameterized.TestCase):
     elif isinstance(axes, tuple):
       axes = list(axes)
     if axes is None:
-      if y.ndim == 2:
-        axes = [x.ndim - 1, y.ndim - 1]
-      else:
-        axes = [x.ndim - 1, y.ndim - 2]
+      axes = [x.ndim - 1, y.ndim - 1] if y.ndim == 2 else [x.ndim - 1, y.ndim - 2]
     if axes[0] < 0:
       axes[0] += x.ndim
     if axes[1] < 0:
       axes[1] += y.ndim
-    result = []
     axes = [axes[0] - 1, axes[1] - 1]
-    for xi, yi in zip(x, y):
-      result.append(np.tensordot(xi, yi, axes))
+    result = [np.tensordot(xi, yi, axes) for xi, yi in zip(x, y)]
     result = np.array(result)
     if result.ndim == 1:
       result = np.expand_dims(result, -1)
@@ -930,9 +925,8 @@ class BackendNNOpsTest(tf.test.TestCase, parameterized.TestCase):
           kernel_sizes = (kernel_size,) * dim
           strides = (stride,) * dim
 
-          output_shape = tuple([
-              (i - kernel_size + stride) // stride for i in input_spatial_shape
-          ])
+          output_shape = tuple(
+              (i - kernel_size + stride) // stride for i in input_spatial_shape)
 
           kernel_shape = (np.prod(output_shape),
                           np.prod(kernel_sizes) * channels_in, filters)
